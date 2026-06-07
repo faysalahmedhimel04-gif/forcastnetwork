@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -57,6 +58,26 @@ export default function SignupPage() {
     }
 
     if (data.user) {
+      // Auto-confirm email via backend (using service role) so users can sign in immediately.
+      // This effectively disables email confirmation requirement for development.
+      // See backend/app/api/auth/confirm/route.ts
+      if (!data.session) {
+        try {
+          await api.post('/api/auth/confirm', { user_id: data.user.id })
+
+          // Now perform sign in to establish the session (since signUp may not return one when confirmation was pending)
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          })
+          if (signInError) {
+            console.warn('Auto sign-in after confirm failed:', signInError)
+          }
+        } catch (confirmError) {
+          console.warn('Auto email confirmation failed (user may need manual confirmation):', confirmError)
+        }
+      }
+
       // Profile is auto-created by DB trigger. Optionally update immediately
       try {
         await supabase
@@ -88,6 +109,9 @@ export default function SignupPage() {
             <CardTitle className="text-2xl">Create your analyst account</CardTitle>
             <CardDescription>
               Join the network of forecasters. Share predictions. Build your track record.
+              <span className="block mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                Email confirmation disabled in development
+              </span>
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSignup}>

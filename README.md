@@ -86,7 +86,11 @@ npm install
 1. Create a Supabase project at https://supabase.com (use a separate project for dev vs production).
 2. Go to **SQL Editor** and run the entire contents of `supabase/schema.sql`.
 3. Copy your project URL + anon key from **Project Settings → API**.
-4. Create `.env.local` by copying `.env.local.example` and filling in the values.
+4. **Disable email confirmation for development** (so new users can sign in immediately without confirming their email):
+   - Go to **Authentication → Settings**
+   - Under Email, turn **OFF** "Enable email confirmations".
+   - (The app also includes an auto-confirmation mechanism via the backend using the service role key for dev convenience.)
+5. Create `.env.local` by copying `.env.local.example` and filling in the values.
 
 ### 4. Run locally
 

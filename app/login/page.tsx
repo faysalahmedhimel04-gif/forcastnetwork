@@ -61,6 +61,9 @@ export default function LoginPage() {
             <CardTitle className="text-2xl">Welcome back</CardTitle>
             <CardDescription>
               Sign in to your analyst account to create and track forecasts
+              <span className="block mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                Email confirmation disabled in development
+              </span>
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleLogin}>
