@@ -2,16 +2,18 @@ import { type NextRequest, NextResponse } from "next/server"
 import { updateSession } from "@/lib/supabase/session"
 
 /**
- * Next.js Proxy (formerly called Middleware) for Supabase session handling.
+ * Next.js Proxy for Supabase session handling.
  *
  * This runs on the Edge and is responsible for:
  * - Refreshing Supabase auth cookies for SSR
  * - Redirecting unauthenticated users away from protected routes (/dashboard, /create, /profile)
  *
- * We migrated from the deprecated `middleware.ts` convention to `proxy.ts` per Next.js 16+ guidance.
  * The internal session logic lives in lib/supabase/session.ts.
  *
  * The matcher excludes static assets, images, and public files.
+ *
+ * Note: This project has fully migrated from the old "middleware.ts" convention
+ * to the current "proxy.ts" convention (per Next.js 16+).
  */
 export async function proxy(request: NextRequest) {
   try {
