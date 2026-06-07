@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
-import { BarChart3, Loader2 } from "lucide-react"
+import { BarChart3, Loader2, Github } from "lucide-react"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -18,8 +18,26 @@ export default function SignupPage() {
   const [username, setUsername] = useState("")
   const [fullName, setFullName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isSocialLoading, setIsSocialLoading] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+
+  async function handleSocialLogin(provider: "google" | "github") {
+    setIsSocialLoading(provider)
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/forecasts`,
+      },
+    })
+
+    setIsSocialLoading(null)
+
+    if (error) {
+      toast.error(error.message || `Failed to sign up with ${provider}`)
+    }
+  }
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
@@ -59,13 +77,14 @@ export default function SignupPage() {
 
     if (data.user) {
       // Auto-confirm email via backend (using service role) so users can sign in immediately.
-      // This effectively disables email confirmation requirement for development.
-      // See backend/app/api/auth/confirm/route.ts
-      if (!data.session) {
+      // Controlled by NEXT_PUBLIC_AUTO_CONFIRM_EMAILS for dev (makes email confirmation optional/disabled in development).
+      // See backend/app/api/auth/confirm/route.ts and .env.local.example
+      const shouldAutoConfirm = process.env.NEXT_PUBLIC_AUTO_CONFIRM_EMAILS === "true"
+      if (shouldAutoConfirm && !data.session) {
         try {
           await api.post('/api/auth/confirm', { user_id: data.user.id })
 
-          // Now perform sign in to establish the session (since signUp may not return one when confirmation was pending)
+          // Now perform sign in to establish the session
           const { error: signInError } = await supabase.auth.signInWithPassword({
             email,
             password,
@@ -87,7 +106,8 @@ export default function SignupPage() {
       } catch (_) {}
 
       toast.success("Account created! Welcome to ForcastNetwork.")
-      router.push("/dashboard")
+      const redirectTo = "/forecasts"
+      router.push(redirectTo)
       router.refresh()
     }
   }
@@ -115,7 +135,48 @@ export default function SignupPage() {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSignup}>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* Social login buttons for clean style */}
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-center gap-2"
+                  onClick={() => handleSocialLogin("google")}
+                  disabled={!!isSocialLoading || isLoading}
+                >
+                  {isSocialLoading === "google" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="text-lg">G</span>
+                  )}
+                  Sign up with Google
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-center gap-2"
+                  onClick={() => handleSocialLogin("github")}
+                  disabled={!!isSocialLoading || isLoading}
+                >
+                  {isSocialLoading === "github" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Github className="h-4 w-4" />
+                  )}
+                  Sign up with GitHub
+                </Button>
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">or create account with email</span>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="fullName">Full name</Label>

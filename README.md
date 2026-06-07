@@ -90,7 +90,12 @@ npm install
    - Go to **Authentication → Settings**
    - Under Email, turn **OFF** "Enable email confirmations".
    - (The app also includes an auto-confirmation mechanism via the backend using the service role key for dev convenience.)
-5. Create `.env.local` by copying `.env.local.example` and filling in the values.
+5. **(Optional) Enable social logins (Google / GitHub)**:
+   - Go to **Authentication → Providers**
+   - Enable Google and/or GitHub.
+   - Configure the OAuth credentials from Google Cloud Console / GitHub Developer Settings.
+   - Add redirect URLs: `http://localhost:3000/auth/callback` (and your production domain).
+6. Create `.env.local` by copying `.env.local.example` and filling in the values.
 
 ### 4. Run locally
 
