@@ -11,7 +11,8 @@ import type { ForecastWithAnalyst, Profile } from "@/types"
 export const dynamic = 'force-dynamic'
 
 export default async function LandingPage() {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
 
   // Use the dedicated backend for data (avoids direct Supabase server client in static prerender paths)
   const [trendingRes, leaderboardRes] = await Promise.all([

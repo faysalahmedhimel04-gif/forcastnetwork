@@ -12,7 +12,8 @@ export default async function LeaderboardPage() {
   const supabase = await createClient()
 
   // Use the dedicated backend for leaderboard data
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
   const res = await fetch(`${backendUrl}/api/leaderboard?limit=100`, {
     next: { revalidate: 60 }, // cache for 1 minute
   })

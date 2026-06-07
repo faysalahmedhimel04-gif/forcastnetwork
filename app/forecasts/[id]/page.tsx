@@ -25,7 +25,8 @@ export default async function ForecastDetailPage({ params }: { params: Promise<{
   const { data: { user } } = await supabase.auth.getUser()
 
   // Prefer backend API for forecast data (centralized, consistent with other pages)
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
   let forecast: any = null
   let comments: Comment[] = []
 

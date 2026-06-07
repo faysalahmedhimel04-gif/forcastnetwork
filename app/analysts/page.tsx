@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 export default async function AnalystsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const params = await searchParams
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
 
   const search = new URLSearchParams()
   if (params.q) search.set('q', params.q)

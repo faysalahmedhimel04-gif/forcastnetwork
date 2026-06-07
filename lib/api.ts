@@ -7,7 +7,8 @@
  * - It automatically attaches the user's Supabase access token.
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
 
 /**
  * Get the current Supabase access token from the client-side session.
