@@ -145,36 +145,68 @@ When you resolve:
 - `is_correct` + `resolved_at` stored
 - Profile stats recalculated via trigger
 
-## Deployment (Vercel + Supabase) — Ready for Production
+## Deployment (Vercel + Supabase) — Production Checklist
 
-The project is production-ready:
-- Clean `npm run build` (verified)
-- Proper environment handling
-- Row Level Security + triggers on all tables
-- SEO basics (sitemap + robots)
+### Pre-Deployment
+- [ ] Set up a **production** Supabase project (separate from dev).
+- [ ] Run `supabase/schema.sql` in the new project's SQL Editor.
+- [ ] In Supabase → Authentication → URL Configuration:
+  - Site URL: your production domain
+  - Add redirect URLs for your domain + Vercel previews
+- [ ] Deploy the **backend** first (`forcastnetwork-backend` folder) and note its URL.
+- [ ] Push latest code (frontend + any backend updates).
+
+### Vercel Deployment (Recommended)
+1. Push to GitHub.
+2. Import **frontend** repo into Vercel.
+3. In Vercel project settings → Environment Variables, add (Production + Preview):
+   - `NEXT_PUBLIC_SUPABASE_URL` (from your prod Supabase)
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (from your prod Supabase)
+   - `NEXT_PUBLIC_BACKEND_URL` (the URL of your deployed backend, e.g. https://your-backend.vercel.app)
+4. Import the **backend** folder/repo into a separate Vercel project (or monorepo setup).
+5. Add the backend's Supabase vars (including `SUPABASE_SERVICE_ROLE_KEY` if used).
+6. Deploy backend first, then frontend.
+
+Vercel will auto-detect Next.js and run `npm run build`.
+
+`vercel.json` files are already present in both folders for regions, function timeouts, etc.
+
+### Post-Deployment
+- Test sign-up → create forecast (including Polymarket-linked) → resolve it.
+- Verify accuracy updates on leaderboard and profiles.
+- Confirm protected routes (`/dashboard`, `/create`, `/profile`) redirect unauthenticated users.
+- Update Supabase redirect URLs with your final domain.
+- (Optional) Set up custom domain + email in Supabase.
+
+### Alternative Hosts
+Build with `npm run build` then `npm start`. Ensure all `NEXT_PUBLIC_*` vars are available at runtime.
+
+**Important**: The frontend now uses the separate backend for most data operations (via `NEXT_PUBLIC_BACKEND_URL`). Keep both in sync.
+
+## Middleware Note
+You may see a deprecation warning for `middleware.ts` in Next.js 16+ with Turbopack ("use proxy instead"). This is informational. The current Supabase auth middleware is still the standard and recommended pattern for session handling and protected routes. It works reliably in production. We can migrate auth checks to layouts + server actions later if the warning becomes a hard error.
+
+## Environment Variables
+See `.env.local.example` in each folder. Never commit real keys.
+
+## Future Enhancements (not in scope)
+- Richer outcome types (numeric ranges, multiple choice)
+- Email notifications on followed analyst new forecasts
+- Export personal accuracy history
+- Verified analyst badges / domains
+- Forecast categories with icons
+
+## Production Readiness
+The site is ready for publishing:
+- Clean `npm run build` on both frontend and backend (verified)
+- Safe Supabase client (dummy fallback for build/prerender when vars missing)
+- force-dynamic on data pages + custom not-found.tsx
+- Separate backend for API (forecasts, comments, follows, leaderboard, Polymarket proxy)
+- SEO (sitemap + robots)
 - Security headers in next.config.ts
-- No client-side secrets
+- Proper env handling and .gitignore
 
-### Pre-Publishing Checklist
-
-1. **Supabase Production Project**
-   - Create or use a dedicated **Production** Supabase project (never reuse dev keys).
-   - Run the full `supabase/schema.sql` in the SQL Editor (or use Supabase migrations for future changes).
-   - Go to **Authentication → URL Configuration** and set:
-     - Site URL: your production domain (e.g. `https://yourapp.com`)
-     - Redirect URLs: add `https://yourapp.com/**` (and localhost for testing)
-   - (Recommended) Enable email confirmations and set up SMTP or use Supabase's service.
-   - Copy the **Production** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-
-2. **Environment Variables**
-   - Never commit real keys. `.env*` is ignored (except `*.example` files).
-   - On your host, set only the two required `NEXT_PUBLIC_*` variables.
-
-3. **Build Verification**
-   ```bash
-   npm run build
-   ```
-   Should complete with no errors.
+See the full checklist above.
 
 ### Recommended (easiest) — Vercel
 

@@ -2,15 +2,19 @@ import { type NextRequest } from "next/server"
 import { updateSession } from "@/lib/supabase/middleware"
 
 /**
- * Supabase session middleware.
+ * Supabase session middleware (required for protecting routes like /dashboard, /create, /profile).
  * 
- * Note: In Next.js 16+ you may see a deprecation warning about the "middleware" convention.
- * This file is still the recommended approach for edge-based auth session handling with Supabase SSR.
- * It runs on the Edge runtime and is required for protected routes.
+ * NOTE on deprecation warning in Next.js 16+ (Turbopack):
+ * The root `middleware.ts` convention may show a deprecation warning suggesting "proxy".
+ * This is informational for general use cases. For Supabase SSR auth (session management + protected routes),
+ * keeping middleware.ts at the root is still the standard and recommended pattern used by the official
+ * Supabase + Next.js examples.
  * 
- * For production deploys (Vercel, etc.) this continues to work reliably.
- * If the warning becomes blocking in a future Next.js version, the logic can be moved
- * into a root layout + server actions pattern, but the current implementation is standard and stable.
+ * The warning does not affect functionality or production builds. If it becomes a hard error in a future
+ * Next.js version, we can migrate auth checks to middleware using the updated proxy config or move
+ * user checks into server components/layouts + server actions.
+ * 
+ * Current matcher protects all routes except static assets.
  */
 export async function middleware(request: NextRequest) {
   return await updateSession(request)
