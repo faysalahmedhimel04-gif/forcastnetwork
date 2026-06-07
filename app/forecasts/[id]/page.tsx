@@ -14,35 +14,69 @@ import { formatDate, formatDateTime } from "@/lib/utils"
 import { PolymarketPrice } from "@/components/polymarket-price"
 import type { Comment } from "@/types"
 
+// Force dynamic rendering. This page performs auth + data lookups and supports
+// mutations (resolve, comments). Avoids prerender failures when env vars are absent at build.
+export const dynamic = 'force-dynamic'
+
 export default async function ForecastDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: forecastRaw } = await supabase
-    .from("forecasts")
-    .select(`*, profiles:user_id (id, username, full_name, avatar_url, accuracy, total_forecasts)`)
-    .eq("id", id)
-    .single()
+  // Prefer backend API for forecast data (centralized, consistent with other pages)
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  let forecast: any = null
+  let comments: Comment[] = []
 
-  if (!forecastRaw) notFound()
+  try {
+    const forecastRes = await fetch(`${backendUrl}/api/forecasts/${id}`, {
+      next: { revalidate: 30 },
+    })
+    if (forecastRes.ok) {
+      const { data: forecastData } = await forecastRes.json()
+      forecast = forecastData
+    }
 
-  const forecast = forecastRaw as any
+    const commentsRes = await fetch(`${backendUrl}/api/comments?forecast_id=${id}`, {
+      next: { revalidate: 30 },
+    })
+    if (commentsRes.ok) {
+      const { data: commentsData = [] } = await commentsRes.json()
+      comments = commentsData
+    }
+  } catch (e) {
+    // fallback will be handled below
+  }
+
+  // Fallback to direct Supabase only if backend call failed (e.g. during some build scenarios)
+  if (!forecast) {
+    const { data: forecastRaw } = await supabase
+      .from("forecasts")
+      .select(`*, profiles:user_id (id, username, full_name, avatar_url, accuracy, total_forecasts)`)
+      .eq("id", id)
+      .single()
+    forecast = forecastRaw
+  }
+
+  if (!forecast) notFound()
+
   const analyst = forecast.profiles
 
-  const { data: commentsRaw } = await supabase
-    .from("comments")
-    .select(`*, profiles:user_id (username, full_name, avatar_url)`)
-    .eq("forecast_id", id)
-    .order("created_at", { ascending: false })
+  if (comments.length === 0) {
+    const { data: commentsRaw } = await supabase
+      .from("comments")
+      .select(`*, profiles:user_id (username, full_name, avatar_url)`)
+      .eq("forecast_id", id)
+      .order("created_at", { ascending: false })
 
-  const comments: Comment[] = (commentsRaw || []).map((c: any) => ({
-    ...c,
-    username: c.profiles?.username,
-    full_name: c.profiles?.full_name,
-    avatar_url: c.profiles?.avatar_url,
-  }))
+    comments = (commentsRaw || []).map((c: any) => ({
+      ...c,
+      username: c.profiles?.username,
+      full_name: c.profiles?.full_name,
+      avatar_url: c.profiles?.avatar_url,
+    }))
+  }
 
   const isOwner = user?.id === forecast.user_id
   const isResolved = forecast.status === "resolved"

@@ -29,9 +29,13 @@ export function Navbar() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const { theme, setTheme } = useTheme()
-  const supabase = createClient()
 
   useEffect(() => {
+    // Create Supabase client only inside effect (client-side only execution).
+    // This avoids any Supabase instantiation during server prerender / static generation
+    // of pages that include the Navbar in the root layout (e.g. /create).
+    const supabase = createClient()
+
     async function getUser() {
       const { data: { user: authUser } } = await supabase.auth.getUser()
       
@@ -64,9 +68,11 @@ export function Navbar() {
     })
 
     return () => subscription.unsubscribe()
-  }, [supabase])
+  }, []) // run once on mount (client only)
 
   async function handleSignOut() {
+    // Create client locally - this only ever runs in the browser after hydration
+    const supabase = createClient()
     const { error } = await supabase.auth.signOut()
     if (error) {
       toast.error("Failed to sign out")

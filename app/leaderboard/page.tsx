@@ -4,6 +4,10 @@ import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import type { LeaderboardEntry } from "@/types"
 
+// Force dynamic: we fetch from the backend API (and some direct Supabase for badges).
+// Prevents build failures when NEXT_PUBLIC_BACKEND_URL or Supabase vars are not yet set.
+export const dynamic = 'force-dynamic'
+
 export default async function LeaderboardPage() {
   const supabase = await createClient()
 
