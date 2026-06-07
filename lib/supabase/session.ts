@@ -6,9 +6,32 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // During build or if env vars not set (e.g. in some Vercel preview contexts),
+    // skip Supabase session handling to avoid crashes.
+    // In production, ensure the vars are set in Vercel dashboard.
+    console.warn('[Supabase Session] Missing env vars, skipping session update')
+    return supabaseResponse
+  }
+
+  // Extra validation to prevent library error with malformed URL (e.g. with /rest/v1/ appended by mistake)
+  if (!supabaseUrl.startsWith('http') || supabaseUrl.includes('/rest/v1')) {
+    console.error('[Supabase Session] Invalid SUPABASE_URL - must be base project URL like https://xxx.supabase.co (no /rest/v1/)')
+    return supabaseResponse
+  }
+
+  // Basic validation to catch malformed URLs (e.g. with /rest/v1/ appended)
+  if (!supabaseUrl.includes('supabase.co') || supabaseUrl.includes('/rest/v1')) {
+    console.error('[Supabase Session] Invalid SUPABASE_URL format. It should be the base project URL like https://xxx.supabase.co (without /rest/v1/)')
+    return supabaseResponse
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {

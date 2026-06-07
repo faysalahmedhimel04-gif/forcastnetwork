@@ -56,7 +56,7 @@ forcastnetwork/
 │   ├── supabase/
 │   │   ├── client.ts
 │   │   ├── server.ts
-│   │   └── middleware.ts
+│   │   └── session.ts          # Supabase cookie session refresh + guards (used by proxy)
 │   ├── actions/
 │   │   ├── forecasts.ts
 │   │   └── follows.ts
@@ -64,7 +64,7 @@ forcastnetwork/
 ├── supabase/
 │   └── schema.sql            # Complete DB + RLS + triggers
 ├── types/
-└── middleware.ts
+└── proxy.ts                  # Edge proxy (auth session + protected route redirects)
 ```
 
 ## Getting Started (Development)
@@ -120,7 +120,7 @@ All tables protected with secure Row Level Security policies.
 ## Authentication Flow
 
 - Email + password via Supabase Auth
-- Middleware protects `/dashboard`, `/create`, `/profile`
+- Edge Proxy (`proxy.ts`) protects `/dashboard`, `/create`, `/profile` + refreshes Supabase sessions
 - Auto profile creation via Postgres trigger on `auth.users`
 - Session handled with `@supabase/ssr`
 
@@ -183,8 +183,14 @@ Build with `npm run build` then `npm start`. Ensure all `NEXT_PUBLIC_*` vars are
 
 **Important**: The frontend now uses the separate backend for most data operations (via `NEXT_PUBLIC_BACKEND_URL`). Keep both in sync.
 
-## Middleware Note
-You may see a deprecation warning for `middleware.ts` in Next.js 16+ with Turbopack ("use proxy instead"). This is informational. The current Supabase auth middleware is still the standard and recommended pattern for session handling and protected routes. It works reliably in production. We can migrate auth checks to layouts + server actions later if the warning becomes a hard error.
+## Edge Proxy (auth)
+We have migrated from the deprecated `middleware.ts` file convention to Next.js `proxy.ts` (per the official codemod and Next.js 16+ guidance).
+
+- Root file: `proxy.ts` (exports `proxy`)
+- Session/guard logic: `lib/supabase/session.ts` (contains the defensive env checks + dummy fallbacks)
+- The proxy still handles Supabase cookie refresh and protected route redirects using the exact same battle-tested patterns.
+
+This eliminates the deprecation warning while keeping full Supabase SSR auth behavior.
 
 ## Environment Variables
 See `.env.local.example` in each folder. Never commit real keys.
@@ -281,7 +287,7 @@ The project has been prepared for publishing:
 - SEO files added (`sitemap.ts` + `robots.ts`)
 - Security headers configured in `next.config.ts`
 - Proper environment variable hygiene (examples committed, real files ignored)
-- Middleware documented for the current Next.js version
+- Edge Proxy (proxy.ts) following current Next.js convention + full defensive guards
 - Comprehensive deployment guide (this README)
 
 See the **Deployment** section above for the full publishing checklist.
