@@ -22,55 +22,36 @@ const createForecastSchema = z.object({
 })
 
 export async function createForecast(formData: FormData) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Use the dedicated backend API instead of direct Supabase insert.
+  // The backend handles validation, auth, and database writes.
+  const { api } = await import('@/lib/api')
 
-  if (!user) {
-    return { error: "You must be signed in" }
-  }
+  try {
+    const payload = {
+      title: formData.get("title"),
+      description: formData.get("description"),
+      category: formData.get("category"),
+      target_date: formData.get("target_date"),
+      predicted_outcome: formData.get("predicted_outcome"),
+      initial_confidence: Number(formData.get("initial_confidence")),
+      external_source: formData.get("external_source") || undefined,
+      external_id: formData.get("external_id") || undefined,
+      external_slug: formData.get("external_slug") || undefined,
+      external_market_price: formData.get("external_market_price")
+        ? Number(formData.get("external_market_price"))
+        : undefined,
+      external_url: formData.get("external_url") || undefined,
+    }
 
-  const parsed = createForecastSchema.safeParse({
-    title: formData.get("title"),
-    description: formData.get("description"),
-    category: formData.get("category"),
-    target_date: formData.get("target_date"),
-    predicted_outcome: formData.get("predicted_outcome"),
-    initial_confidence: formData.get("initial_confidence"),
-  })
+    await api.post('/api/forecasts', payload)
 
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message || "Invalid data" }
-  }
-
-  const insertData: any = {
-    user_id: user.id,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    category: parsed.data.category,
-    target_date: parsed.data.target_date,
-    predicted_outcome: parsed.data.predicted_outcome,
-    initial_confidence: parsed.data.initial_confidence,
-  }
-
-  // Attach external reference if provided (Polymarket etc.)
-  if (parsed.data.external_source) {
-    insertData.external_source = parsed.data.external_source
-    insertData.external_id = parsed.data.external_id || null
-    insertData.external_slug = parsed.data.external_slug || null
-    insertData.external_market_price = parsed.data.external_market_price ?? null
-    insertData.external_url = parsed.data.external_url || null
-  }
-
-  const { error } = await supabase.from("forecasts").insert(insertData)
-
-  if (error) {
+    revalidatePath("/forecasts")
+    revalidatePath("/dashboard")
+    redirect("/dashboard")
+  } catch (error: any) {
     console.error(error)
-    return { error: "Failed to create forecast. Please try again." }
+    return { error: error.message || "Failed to create forecast. Please try again." }
   }
-
-  revalidatePath("/forecasts")
-  revalidatePath("/dashboard")
-  redirect("/dashboard")
 }
 
 const resolveSchema = z.object({
@@ -79,78 +60,40 @@ const resolveSchema = z.object({
 })
 
 export async function resolveForecast(formData: FormData) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Delegate to the backend API
+  const { api } = await import('@/lib/api')
 
-  if (!user) {
-    throw new Error("You must be signed in to resolve forecasts")
+  try {
+    const payload = {
+      resolved_outcome: formData.get("resolved_outcome"),
+    }
+
+    const forecastId = formData.get("forecast_id")
+    await api.patch(`/api/forecasts/${forecastId}`, payload)
+
+    revalidatePath(`/forecasts/${forecastId}`)
+    revalidatePath("/forecasts")
+    revalidatePath("/leaderboard")
+    revalidatePath("/dashboard")
+
+    redirect(`/forecasts/${forecastId}`)
+  } catch (error: any) {
+    throw new Error(error.message || "Failed to resolve forecast")
   }
-
-  const parsed = resolveSchema.safeParse({
-    forecast_id: formData.get("forecast_id"),
-    resolved_outcome: formData.get("resolved_outcome"),
-  })
-
-  if (!parsed.success) {
-    throw new Error("Invalid resolution data")
-  }
-
-  // Verify ownership and status
-  const { data: forecast } = await supabase
-    .from("forecasts")
-    .select("user_id, status, predicted_outcome")
-    .eq("id", parsed.data.forecast_id)
-    .single()
-
-  if (!forecast || forecast.user_id !== user.id) {
-    throw new Error("You can only resolve your own forecasts")
-  }
-  if (forecast.status === "resolved") {
-    throw new Error("This forecast is already resolved")
-  }
-
-  const isCorrect = forecast.predicted_outcome.toLowerCase().trim() === 
-                    parsed.data.resolved_outcome.toLowerCase().trim()
-
-  const { error } = await supabase
-    .from("forecasts")
-    .update({
-      status: "resolved",
-      resolved_outcome: parsed.data.resolved_outcome,
-      is_correct: isCorrect,
-      resolved_at: new Date().toISOString(),
-      resolved_by: user.id,
-    })
-    .eq("id", parsed.data.forecast_id)
-
-  if (error) {
-    throw new Error("Failed to resolve forecast")
-  }
-
-  revalidatePath(`/forecasts/${parsed.data.forecast_id}`)
-  revalidatePath("/forecasts")
-  revalidatePath("/leaderboard")
-  revalidatePath("/dashboard")
-
-  // Redirect back to the forecast detail page to show updated state
-  redirect(`/forecasts/${parsed.data.forecast_id}`)
 }
 
 export async function addComment(forecastId: string, content: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { api } = await import('@/lib/api')
 
-  if (!user) return { error: "You must be logged in to comment" }
-  if (!content || content.trim().length < 1) return { error: "Comment cannot be empty" }
+  try {
+    await api.post('/api/comments', {
+      forecast_id: forecastId,
+      content: content.trim().slice(0, 2000),
+    })
 
-  const { error } = await supabase.from("comments").insert({
-    forecast_id: forecastId,
-    user_id: user.id,
-    content: content.trim().slice(0, 2000),
-  })
-
-  if (error) return { error: "Failed to post comment" }
-
-  revalidatePath(`/forecasts/${forecastId}`)
-  return { success: true }
+    revalidatePath(`/forecasts/${forecastId}`)
+    return { success: true }
+  } catch (error: any) {
+    return { error: error.message || "Failed to post comment" }
+  }
 }

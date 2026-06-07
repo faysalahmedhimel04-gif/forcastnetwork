@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
+export const dynamic = 'force-dynamic'
+
 export default async function AnalystsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const params = await searchParams
   const supabase = await createClient()

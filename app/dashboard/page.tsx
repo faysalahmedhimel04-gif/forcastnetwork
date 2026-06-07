@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus } from "lucide-react"
 import type { ForecastWithAnalyst, Profile } from "@/types"
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

@@ -7,15 +7,14 @@ import type { LeaderboardEntry } from "@/types"
 export default async function LeaderboardPage() {
   const supabase = await createClient()
 
-  const { data: entries } = await supabase
-    .from("profiles")
-    .select("id, username, full_name, avatar_url, accuracy, total_forecasts, correct_forecasts, follower_count, expertise_areas")
-    .gte("total_forecasts", 1)
-    .order("accuracy", { ascending: false })
-    .order("total_forecasts", { ascending: false })
-    .limit(100)
+  // Use the dedicated backend for leaderboard data
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+  const res = await fetch(`${backendUrl}/api/leaderboard?limit=100`, {
+    next: { revalidate: 60 }, // cache for 1 minute
+  })
+  const { data: entries = [] } = await res.json()
 
-  const leaderboard: LeaderboardEntry[] = (entries || []) as any
+  const leaderboard: LeaderboardEntry[] = entries || []
 
   // Fetch set of analysts who have at least one Polymarket-linked forecast (for badges)
   const { data: linked } = await supabase
