@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { ForecastCard } from "@/components/forecast-card"
 import { AnalystCard } from "@/components/analyst-card"
 import { getTrendingPolymarketMarkets } from "@/lib/polymarket"
+import { createClient } from "@/lib/supabase/server"
 import { ArrowRight, Target, Users, TrendingUp, Award, Shield, ExternalLink } from "lucide-react"
 import type { ForecastWithAnalyst, Profile } from "@/types"
 
@@ -14,23 +15,54 @@ export default async function LandingPage() {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
     (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
 
-  // Use the dedicated backend for data (avoids direct Supabase server client in static prerender paths)
-  const [trendingRes, leaderboardRes] = await Promise.all([
-    fetch(`${backendUrl}/api/forecasts?status=open&limit=6`, { next: { revalidate: 60 } }),
-    fetch(`${backendUrl}/api/leaderboard?limit=4`, { next: { revalidate: 60 } }),
-  ])
+  let trendingForecasts: ForecastWithAnalyst[] = []
+  let topAnalysts: any[] = []
 
-  const trendingData = await trendingRes.json()
-  const leaderboardData = await leaderboardRes.json()
+  if (backendUrl) {
+    // Use the dedicated backend for data when configured
+    const [trendingRes, leaderboardRes] = await Promise.all([
+      fetch(`${backendUrl}/api/forecasts?status=open&limit=6`, { next: { revalidate: 60 } }),
+      fetch(`${backendUrl}/api/leaderboard?limit=4`, { next: { revalidate: 60 } }),
+    ])
 
-  const trendingForecasts: ForecastWithAnalyst[] = (trendingData.data || []).map((f: any) => ({
-    ...f,
-    analyst_username: f.profiles?.username || "",
-    analyst_name: f.profiles?.full_name || null,
-    analyst_avatar: f.profiles?.avatar_url || null,
-  }))
+    const trendingData = await trendingRes.json()
+    const leaderboardData = await leaderboardRes.json()
 
-  const topAnalysts = leaderboardData.data || []
+    trendingForecasts = (trendingData.data || []).map((f: any) => ({
+      ...f,
+      analyst_username: f.profiles?.username || "",
+      analyst_name: f.profiles?.full_name || null,
+      analyst_avatar: f.profiles?.avatar_url || null,
+    }))
+
+    topAnalysts = leaderboardData.data || []
+  } else {
+    // Fallback to direct Supabase when backend URL not configured (allows deploy without the env var)
+    const supabase = await createClient()
+
+    const { data: trendingRaw } = await supabase
+      .from("forecasts")
+      .select(`*, profiles:user_id (id, username, full_name, avatar_url)`)
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(6)
+
+    trendingForecasts = (trendingRaw || []).map((f: any) => ({
+      ...f,
+      analyst_username: f.profiles?.username || "",
+      analyst_name: f.profiles?.full_name || null,
+      analyst_avatar: f.profiles?.avatar_url || null,
+    }))
+
+    const { data: leaderboardRaw } = await supabase
+      .from("profiles")
+      .select("id, username, full_name, avatar_url, accuracy, total_forecasts, correct_forecasts, follower_count, expertise_areas")
+      .gte("total_forecasts", 1)
+      .order("accuracy", { ascending: false })
+      .limit(4)
+
+    topAnalysts = leaderboardRaw || []
+  }
 
   // Trending Polymarket events (reference only)
   const polymarketEvents = await getTrendingPolymarketMarkets(6)
