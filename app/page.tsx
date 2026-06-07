@@ -12,33 +12,25 @@ import type { ForecastWithAnalyst, Profile } from "@/types"
 export const dynamic = 'force-dynamic'
 
 export default async function LandingPage() {
-  const supabase = await createClient()
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
-  // Fetch trending open forecasts (limited)
-  const { data: trending } = await supabase
-    .from("forecasts")
-    .select(`
-      *,
-      profiles:user_id (username, full_name, avatar_url)
-    `)
-    .eq("status", "open")
-    .order("comment_count", { ascending: false })
-    .limit(6)
+  // Use the dedicated backend for data (avoids direct Supabase server client in static prerender paths)
+  const [trendingRes, leaderboardRes] = await Promise.all([
+    fetch(`${backendUrl}/api/forecasts?status=open&limit=6`, { next: { revalidate: 60 } }),
+    fetch(`${backendUrl}/api/leaderboard?limit=4`, { next: { revalidate: 60 } }),
+  ])
 
-  const trendingForecasts: ForecastWithAnalyst[] = (trending || []).map((f: any) => ({
+  const trendingData = await trendingRes.json()
+  const leaderboardData = await leaderboardRes.json()
+
+  const trendingForecasts: ForecastWithAnalyst[] = (trendingData.data || []).map((f: any) => ({
     ...f,
     analyst_username: f.profiles?.username || "",
     analyst_name: f.profiles?.full_name || null,
     analyst_avatar: f.profiles?.avatar_url || null,
   }))
 
-  // Fetch top analysts
-  const { data: topAnalysts } = await supabase
-    .from("profiles")
-    .select("*")
-    .gte("total_forecasts", 2)
-    .order("accuracy", { ascending: false })
-    .limit(4)
+  const topAnalysts = leaderboardData.data || []
 
   // Trending Polymarket events (reference only)
   const polymarketEvents = await getTrendingPolymarketMarkets(6)

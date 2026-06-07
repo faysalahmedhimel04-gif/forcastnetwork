@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { ForecastCard } from "@/components/forecast-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,38 +22,21 @@ export default async function ForecastsPage({
   searchParams: Promise<SearchParams>
 }) {
   const params = await searchParams
-  const supabase = await createClient()
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
-  let query = supabase
-    .from("forecasts")
-    .select(`
-      *,
-      profiles:user_id (username, full_name, avatar_url)
-    `)
-    .order("created_at", { ascending: false })
+  const search = new URLSearchParams()
+  if (params.q) search.set('q', params.q)
+  if (params.category && params.category !== 'all') search.set('category', params.category)
+  if (params.status === 'open' || params.status === 'resolved') search.set('status', params.status)
+  if (params.source === 'polymarket') search.set('source', 'polymarket')
+  else if (params.source === 'manual') search.set('source', 'manual')
 
-  // Filters
-  if (params.q) {
-    const term = `%${params.q}%`
-    query = query.or(`title.ilike.${term},description.ilike.${term}`)
-  }
-  if (params.category && params.category !== "all") {
-    query = query.eq("category", params.category)
-  }
-  if (params.status === "open") {
-    query = query.eq("status", "open")
-  } else if (params.status === "resolved") {
-    query = query.eq("status", "resolved")
-  }
-  if (params.source === "polymarket") {
-    query = query.eq("external_source", "polymarket")
-  } else if (params.source === "manual") {
-    query = query.is("external_source", null)
-  }
+  const res = await fetch(`${backendUrl}/api/forecasts?${search.toString()}&limit=60`, {
+    next: { revalidate: 30 },
+  })
+  const { data: forecastsRaw = [] } = await res.json()
 
-  const { data: forecastsRaw } = await query.limit(60)
-
-  const forecasts: ForecastWithAnalyst[] = (forecastsRaw || []).map((f: any) => ({
+  const forecasts: ForecastWithAnalyst[] = forecastsRaw.map((f: any) => ({
     ...f,
     analyst_username: f.profiles?.username || "unknown",
     analyst_name: f.profiles?.full_name || null,

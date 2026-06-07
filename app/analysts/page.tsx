@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { AnalystCard } from "@/components/analyst-card"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
@@ -8,33 +7,20 @@ export const dynamic = 'force-dynamic'
 
 export default async function AnalystsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const params = await searchParams
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
 
-  let query = supabase
-    .from("profiles")
-    .select("*")
-    .order("follower_count", { ascending: false })
-    .order("accuracy", { ascending: false })
-    .limit(48)
+  const search = new URLSearchParams()
+  if (params.q) search.set('q', params.q)
 
-  if (params.q) {
-    const term = `%${params.q}%`
-    query = query.or(`username.ilike.${term},full_name.ilike.${term},bio.ilike.${term}`)
-  }
-
-  const { data: analystsRaw } = await query
-
-  // Fetch who current user follows (to show following state)
-  let followedSet = new Set<string>()
-  if (user) {
-    const { data: follows } = await supabase.from("follows").select("following_id").eq("follower_id", user.id)
-    followedSet = new Set((follows || []).map((f: any) => f.following_id))
-  }
+  // Use backend for public analysts data
+  const res = await fetch(`${backendUrl}/api/leaderboard?limit=48&${search.toString()}`, {
+    next: { revalidate: 60 },
+  })
+  const { data: analystsRaw = [] } = await res.json().catch(() => ({}))
 
   const analysts = (analystsRaw || []).map((a: any) => ({
     ...a,
-    is_following: followedSet.has(a.id),
+    is_following: false,
   }))
 
   return (
@@ -59,7 +45,7 @@ export default async function AnalystsPage({ searchParams }: { searchParams: Pro
               key={analyst.id} 
               analyst={analyst} 
               onFollowToggle={undefined} 
-              currentUserId={user?.id} 
+              currentUserId={undefined} 
             />
           ))}
         </div>
