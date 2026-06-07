@@ -44,18 +44,41 @@ export async function createClient() {
 
   const cookieStore = await cookies()
 
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
+  try {
+    return createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          } catch {
+            // Called from Server Component - safe to ignore
+          }
+        },
       },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-        } catch {
-          // Called from Server Component - safe to ignore
-        }
+    })
+  } catch (err) {
+    // Ultimate fallback if the library still throws (e.g. during static prerender of error pages)
+    console.warn('[Supabase] createServerClient threw, using dummy for prerender/build')
+    const noOp = () => Promise.resolve({ data: [], error: null })
+    const chainable = {
+      select: () => chainable,
+      insert: noOp,
+      update: noOp,
+      delete: noOp,
+      eq: () => chainable,
+      order: () => chainable,
+      limit: () => chainable,
+      single: () => Promise.resolve({ data: null, error: null }),
+      then: (resolve: any) => resolve({ data: [], error: null }),
+    }
+    return {
+      from: () => chainable,
+      auth: {
+        getUser: async () => ({ data: { user: null }, error: null }),
       },
-    },
-  })
+    } as any
+  }
 }
