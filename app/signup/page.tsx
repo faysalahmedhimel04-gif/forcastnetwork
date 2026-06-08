@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
-import { BarChart3, Loader2, Github } from "lucide-react"
+import { BarChart3, Loader2 } from "lucide-react"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -97,13 +97,18 @@ export default function SignupPage() {
         }
       }
 
-      // Profile is auto-created by DB trigger. Optionally update immediately
+      // CRITICAL: Explicitly ensure a profiles row exists for this user.
+      // The DB trigger (handle_new_user) is best-effort and can fail on username collisions
+      // (especially with social logins or duplicate email local-parts). We pass the exact
+      // username the user chose so the profile gets the desired handle.
       try {
-        await supabase
-          .from("profiles")
-          .update({ full_name: fullName || null })
-          .eq("id", data.user.id)
-      } catch (_) {}
+        await api.post('/api/profiles/ensure', {
+          username: username.toLowerCase(),
+          full_name: fullName || null,
+        })
+      } catch (ensureErr) {
+        console.warn('Profile ensure after signup failed (will retry on login):', ensureErr)
+      }
 
       toast.success("Account created! Welcome to ForcastNetwork.")
       const redirectTo = "/forecasts"
@@ -162,7 +167,7 @@ export default function SignupPage() {
                   {isSocialLoading === "github" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Github className="h-4 w-4" />
+                    <span className="text-sm font-semibold">GH</span>
                   )}
                   Sign up with GitHub
                 </Button>

@@ -303,3 +303,178 @@ CREATE INDEX IF NOT EXISTS idx_forecasts_external ON public.forecasts(external_s
 -- Recommended categories (used in UI):
 -- 'Politics', 'Technology', 'Economy', 'Science', 'Sports', 
 -- 'Entertainment', 'Business', 'Weather', 'Geopolitics', 'Other'
+
+-- ============================================================
+-- AUDIT FIXES (2026-04+): Robust profile creation + RLS
+-- Run this entire block in Supabase SQL Editor if your users are missing profiles.
+-- These changes make signup/login resilient even when the original trigger
+-- failed due to username collisions (social logins, duplicate email prefixes, etc).
+-- ============================================================
+
+-- 1) CRITICAL MISSING POLICY: Without this, even authenticated users cannot
+--    INSERT a profile row from the client (the trigger uses SECURITY DEFINER
+--    to bypass). This was a root cause of "profile never appears".
+CREATE POLICY IF NOT EXISTS "Users can insert their own profile"
+  ON public.profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- 2) Improved trigger function with:
+--    - Better metadata extraction for Google, GitHub, email signups
+--    - Automatic unique username fallback on collision
+--    - ON CONFLICT safety
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  final_username TEXT;
+  attempt INT := 0;
+  max_attempts INT := 6;
+  v_full_name TEXT;
+  v_avatar_url TEXT;
+BEGIN
+  -- Robust extraction (email/password pass "username", OAuth providers use different keys)
+  base_username := COALESCE(
+    NEW.raw_user_meta_data->>'username',
+    NEW.raw_user_meta_data->>'user_name',
+    NEW.raw_user_meta_data->>'preferred_username',
+    regexp_replace(COALESCE(NEW.raw_user_meta_data->>'name', ''), '\s+', '_', 'g'),
+    split_part(COALESCE(NEW.email, 'user_' || substr(NEW.id::text, 1, 8)), '@', 1)
+  );
+
+  -- Sanitize
+  base_username := lower(regexp_replace(base_username, '[^a-z0-9_]', '_', 'g'));
+  base_username := regexp_replace(base_username, '_+', '_', 'g');
+  base_username := trim(both '_' from base_username);
+  IF base_username IS NULL OR length(base_username) < 2 THEN
+    base_username := 'user_' || substr(NEW.id::text, 1, 8);
+  END IF;
+  base_username := substr(base_username, 1, 20);
+
+  v_full_name := COALESCE(
+    NEW.raw_user_meta_data->>'full_name',
+    NEW.raw_user_meta_data->>'name',
+    ''
+  );
+
+  v_avatar_url := COALESCE(
+    NEW.raw_user_meta_data->>'avatar_url',
+    NEW.raw_user_meta_data->>'picture',
+    NEW.raw_user_meta_data->>'avatar',
+    ''
+  );
+
+  final_username := base_username;
+
+  -- Try insert with unique username fallback
+  WHILE attempt < max_attempts LOOP
+    BEGIN
+      INSERT INTO public.profiles (id, username, full_name, avatar_url)
+      VALUES (NEW.id, final_username, v_full_name, v_avatar_url)
+      ON CONFLICT (id) DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        avatar_url = EXCLUDED.avatar_url,
+        updated_at = NOW();
+      RETURN NEW;
+    EXCEPTION WHEN unique_violation THEN
+      attempt := attempt + 1;
+      final_username := substr(base_username, 1, 16) || '_' || substr(md5(random()::text), 1, 4);
+    END;
+  END LOOP;
+
+  -- Last resort: still create the profile with a guaranteed unique suffix
+  INSERT INTO public.profiles (id, username, full_name, avatar_url)
+  VALUES (NEW.id, 'user_' || substr(NEW.id::text, 1, 12), v_full_name, v_avatar_url)
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Re-create the trigger (idempotent)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 3) Optional but recommended: callable function for "ensure my profile" from backend (service role)
+--    The backend calls this (or does equivalent logic) as a hard fallback on login + writes.
+CREATE OR REPLACE FUNCTION public.ensure_profile(
+  p_user_id UUID,
+  p_preferred_username TEXT DEFAULT NULL,
+  p_full_name TEXT DEFAULT NULL,
+  p_avatar_url TEXT DEFAULT NULL
+)
+RETURNS public.profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  existing public.profiles;
+  base TEXT;
+  candidate TEXT;
+  attempt INT := 0;
+BEGIN
+  SELECT * INTO existing FROM public.profiles WHERE id = p_user_id;
+  IF existing.id IS NOT NULL THEN
+    RETURN existing;
+  END IF;
+
+  base := COALESCE(
+    p_preferred_username,
+    'user_' || substr(p_user_id::text, 1, 8)
+  );
+  base := lower(regexp_replace(base, '[^a-z0-9_]', '_', 'g'));
+  candidate := substr(base, 1, 20);
+
+  WHILE attempt < 6 LOOP
+    BEGIN
+      INSERT INTO public.profiles (id, username, full_name, avatar_url)
+      VALUES (p_user_id, candidate, COALESCE(p_full_name, ''), COALESCE(p_avatar_url, ''))
+      ON CONFLICT (id) DO UPDATE SET
+        full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
+        avatar_url = COALESCE(EXCLUDED.avatar_url, public.profiles.avatar_url);
+      RETURN (SELECT * FROM public.profiles WHERE id = p_user_id);
+    EXCEPTION WHEN unique_violation THEN
+      attempt := attempt + 1;
+      candidate := substr(base, 1, 16) || '_' || substr(md5(random()::text), 1, 4);
+    END;
+  END LOOP;
+
+  -- absolute fallback
+  INSERT INTO public.profiles (id, username, full_name)
+  VALUES (p_user_id, 'user_' || substr(p_user_id::text, 1, 12), COALESCE(p_full_name, ''))
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN (SELECT * FROM public.profiles WHERE id = p_user_id);
+END;
+$$;
+
+-- 4) One-time backfill for any auth users that are missing profiles right now.
+--    Run this once after deploying the improved trigger.
+DO $$
+DECLARE
+  u RECORD;
+BEGIN
+  FOR u IN
+    SELECT au.id, au.email, au.raw_user_meta_data
+    FROM auth.users au
+    LEFT JOIN public.profiles p ON p.id = au.id
+    WHERE p.id IS NULL
+  LOOP
+    BEGIN
+      PERFORM public.ensure_profile(
+        u.id,
+        COALESCE(u.raw_user_meta_data->>'username', split_part(COALESCE(u.email, ''), '@', 1)),
+        COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name')
+      );
+    EXCEPTION WHEN OTHERS THEN
+      -- never let one bad row stop the backfill
+      RAISE NOTICE 'Backfill failed for %: %', u.id, SQLERRM;
+    END;
+  END LOOP;
+END $$;
+
+COMMENT ON FUNCTION public.handle_new_user() IS 'Improved trigger (post-audit). Creates profile for every new auth.users row with collision-resistant username.';
+COMMENT ON FUNCTION public.ensure_profile(UUID, TEXT, TEXT, TEXT) IS 'Idempotent helper. Call from backend (service role) or admin scripts to guarantee a profile row exists.';
+

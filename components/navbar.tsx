@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
+import type { AuthChangeEvent, Session, User as SupabaseUser } from "@supabase/supabase-js"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -44,10 +45,25 @@ export function Navbar() {
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .eq("id", authUser.id)
-          .single()
+          .maybeSingle()
         
         if (profile) {
           setUser(profile)
+        } else {
+          // Authenticated but no profile row yet (trigger failed, social login, legacy user, etc).
+          // Show the user as logged in using auth metadata fallback so UI doesn't "log them out".
+          // Kick off a background ensure (via backend service role) so the real profile appears soon.
+          const fallback: UserProfile = {
+            id: authUser.id,
+            username: (authUser.user_metadata?.username as string) ||
+                      (authUser.email ? authUser.email.split('@')[0] : 'user'),
+            full_name: (authUser.user_metadata?.full_name as string) || null,
+            avatar_url: (authUser.user_metadata?.avatar_url as string) || null,
+          }
+          setUser(fallback)
+
+          // Fire-and-forget ensure. This will create the missing profiles row.
+          api.post('/api/profiles/ensure', {}).catch(() => {})
         }
       }
       setIsLoading(false)
@@ -60,8 +76,22 @@ export function Navbar() {
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .eq("id", session.user.id)
-          .single()
-        setUser(profile)
+          .maybeSingle()
+
+        if (profile) {
+          setUser(profile)
+        } else {
+          // Same fallback treatment for OAuth / late profile creation flows
+          const u = session.user
+          const fallback: UserProfile = {
+            id: u.id,
+            username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
+            full_name: (u.user_metadata?.full_name as string) || null,
+            avatar_url: (u.user_metadata?.avatar_url as string) || null,
+          }
+          setUser(fallback)
+          api.post('/api/profiles/ensure', {}).catch(() => {})
+        }
       } else {
         setUser(null)
       }

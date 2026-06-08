@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +15,8 @@ import { FORECAST_CATEGORIES } from "@/types"
 
 export default function ProfileEditPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [authUserId, setAuthUserId] = useState<string | null>(null)
+  const [authUsername, setAuthUsername] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
@@ -31,7 +34,15 @@ export default function ProfileEditPage() {
         window.location.href = "/login"
         return
       }
-      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+      setAuthUserId(user.id)
+
+      // Derive a usable username from auth metadata as fallback (for brand new social accounts
+      // or when the profiles row is still missing).
+      const metaUsername = (user.user_metadata?.username as string) ||
+        (user.email ? user.email.split('@')[0] : `user_${user.id.slice(0, 8)}`)
+      setAuthUsername(metaUsername)
+
+      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle()
       if (data) {
         setProfile(data)
         setForm({
@@ -39,6 +50,12 @@ export default function ProfileEditPage() {
           bio: data.bio || "",
           expertise_areas: data.expertise_areas || [],
         })
+      } else {
+        // No profile row yet — prefill what we can so user can create it.
+        setForm((f) => ({
+          ...f,
+          full_name: (user.user_metadata?.full_name as string) || "",
+        }))
       }
       setLoading(false)
     }
@@ -47,25 +64,69 @@ export default function ProfileEditPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    if (!profile) return
+    if (!authUserId) return
 
     setSaving(true)
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        full_name: form.full_name || null,
-        bio: form.bio || null,
-        expertise_areas: form.expertise_areas,
-      })
-      .eq("id", profile.id)
+    const payload = {
+      full_name: form.full_name || null,
+      bio: form.bio || null,
+      expertise_areas: form.expertise_areas,
+    }
+
+    let error: any = null
+
+    if (profile?.id) {
+      // Existing row → update (RLS allows owner)
+      const res = await supabase
+        .from("profiles")
+        .update(payload)
+        .eq("id", profile.id)
+      error = res.error
+    } else {
+      // No profile row yet → create it. We need a username.
+      // Prefer the one from signup metadata; fall back to what we captured.
+      const desiredUsername = (profile as any)?.username || authUsername || `user_${authUserId.slice(0, 8)}`
+
+      // First try the backend ensure (service role, robust unique username logic)
+      try {
+        await api.post('/api/profiles/ensure', {
+          username: desiredUsername,
+          full_name: payload.full_name,
+        })
+      } catch {}
+
+      // Then do a direct upsert (will succeed once the row exists or RLS INSERT policy is present)
+      const res = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: authUserId,
+            username: desiredUsername,
+            ...payload,
+          },
+          { onConflict: 'id' }
+        )
+        .select()
+        .single()
+
+      error = res.error
+      if (!error && res.data) {
+        setProfile(res.data as Profile)
+      }
+    }
 
     setSaving(false)
 
     if (error) {
-      toast.error("Failed to update profile")
+      toast.error(error.message || "Failed to save profile")
     } else {
-      toast.success("Profile updated successfully")
+      toast.success(profile ? "Profile updated successfully" : "Profile created successfully")
+      // Refresh local data
+      const { data: refreshed } = await supabase.from("profiles").select("*").eq("id", authUserId).single()
+      if (refreshed) {
+        setProfile(refreshed as Profile)
+      }
     }
   }
 
@@ -146,7 +207,8 @@ export default function ProfileEditPage() {
       </form>
 
       <div className="mt-10 text-xs text-muted-foreground">
-        Username and accuracy stats are managed automatically. Username cannot be changed after signup.
+        Username is set at account creation and cannot be changed. Accuracy stats update automatically when your forecasts are resolved.
+        {!profile && " If this is your first visit after signup/login, saving here will create your public profile record."}
       </div>
     </div>
   )

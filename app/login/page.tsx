@@ -4,12 +4,13 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
-import { BarChart3, Loader2, Github } from "lucide-react"
+import { BarChart3, Loader2 } from "lucide-react"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -63,6 +64,15 @@ export default function LoginPage() {
     if (error) {
       toast.error(error.message || "Failed to sign in")
       return
+    }
+
+    // Fallback: if the user was created without a profiles row (trigger missed, old data,
+    // social signup race, etc.), create it now using whatever metadata is on the auth user.
+    // This makes login "just work" even for previously broken accounts.
+    try {
+      await api.post('/api/profiles/ensure', {})
+    } catch (ensureErr) {
+      console.warn('Profile ensure after login failed (non-fatal):', ensureErr)
     }
 
     toast.success("Welcome back!")
@@ -120,7 +130,7 @@ export default function LoginPage() {
                 {isSocialLoading === "github" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Github className="h-4 w-4" />
+                  <span className="text-sm font-semibold">GH</span>
                 )}
                 Continue with GitHub
               </Button>

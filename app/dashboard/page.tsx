@@ -18,11 +18,12 @@ export default async function DashboardPage() {
   }
 
   // Current user profile + stats
+  // Use maybeSingle so a missing profile row (buggy previous signup) does not throw.
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .single()
+    .maybeSingle()
 
   // My forecasts
   const { data: myForecastsRaw } = await supabase
@@ -74,9 +75,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="container max-w-7xl mx-auto px-4 py-9">
+      {!profile && (
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          Your profile record was not created automatically. <Link href="/profile" className="underline font-medium">Complete your profile</Link> now so your forecasts and follows work correctly.
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-y-3 mb-9">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Welcome back, {profile?.full_name || profile?.username}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Welcome back, {profile?.full_name || profile?.username || "forecaster"}</h1>
           <p className="text-muted-foreground">Your personal forecasting command center</p>
         </div>
         <Button asChild>
