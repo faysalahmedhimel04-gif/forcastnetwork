@@ -38,32 +38,36 @@ export function Navbar() {
     const supabase = createClient()
 
     async function getUser() {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      
+      // Use getSession for faster/more reliable client-side detection after login redirect.
+      // getUser() does extra validation which can sometimes lag right after signIn.
+      const { data: { session } } = await supabase.auth.getSession()
+      const authUser = session?.user
+
       if (authUser) {
+        // Immediately set a fallback so the logged-in UI (avatar, dropdown, "New Forecast" etc.)
+        // never disappears even if the profiles row isn't ready yet.
+        const quickFallback: UserProfile = {
+          id: authUser.id,
+          username: (authUser.user_metadata?.username as string) ||
+                    (authUser.email ? authUser.email.split('@')[0] : 'user'),
+          full_name: (authUser.user_metadata?.full_name as string) || null,
+          avatar_url: (authUser.user_metadata?.avatar_url as string) || null,
+        }
+        setUser(quickFallback)
+
+        // Now try to load the real profile data (for accurate name/avatar)
         const { data: profile } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .eq("id", authUser.id)
           .maybeSingle()
-        
+
         if (profile) {
           setUser(profile)
         } else {
-          // Authenticated but no profile row yet (trigger failed, social login, legacy user, etc).
-          // Show the user as logged in using auth metadata fallback so UI doesn't "log them out".
-          // Kick off a background ensure (via backend service role) so the real profile appears soon.
-          const fallback: UserProfile = {
-            id: authUser.id,
-            username: (authUser.user_metadata?.username as string) ||
-                      (authUser.email ? authUser.email.split('@')[0] : 'user'),
-            full_name: (authUser.user_metadata?.full_name as string) || null,
-            avatar_url: (authUser.user_metadata?.avatar_url as string) || null,
-          }
-          setUser(fallback)
-
-          // Fire-and-forget ensure. This will create the missing profiles row.
+          // Profile still missing — ensure it in the background (backend will create it)
           api.post('/api/profiles/ensure', {}).catch(() => {})
+          // Keep the quickFallback so the user menu stays visible
         }
       }
       setIsLoading(false)
@@ -72,25 +76,27 @@ export function Navbar() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
       if (session?.user) {
+        const u = session.user
+        // Set quick fallback immediately so UI (avatar + profile buttons) stays visible
+        const quickFallback: UserProfile = {
+          id: u.id,
+          username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
+          full_name: (u.user_metadata?.full_name as string) || null,
+          avatar_url: (u.user_metadata?.avatar_url as string) || null,
+        }
+        setUser(quickFallback)
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
-          .eq("id", session.user.id)
+          .eq("id", u.id)
           .maybeSingle()
 
         if (profile) {
           setUser(profile)
         } else {
-          // Same fallback treatment for OAuth / late profile creation flows
-          const u = session.user
-          const fallback: UserProfile = {
-            id: u.id,
-            username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
-            full_name: (u.user_metadata?.full_name as string) || null,
-            avatar_url: (u.user_metadata?.avatar_url as string) || null,
-          }
-          setUser(fallback)
           api.post('/api/profiles/ensure', {}).catch(() => {})
+          // keep quickFallback
         }
       } else {
         setUser(null)
