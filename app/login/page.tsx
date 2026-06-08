@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -12,7 +12,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { toast } from "sonner"
 import { BarChart3, Loader2 } from "lucide-react"
 
-export default function LoginPage() {
+// Inner component that uses useSearchParams (must be wrapped in Suspense)
+function LoginContent() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -195,5 +196,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+// Main page component - wraps LoginContent in Suspense to satisfy Next.js requirement
+// for useSearchParams().
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12 bg-muted/30">
+        <div className="w-full max-w-md text-center text-muted-foreground">Loading...</div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }
