@@ -37,75 +37,54 @@ export function Navbar() {
     // of pages that include the Navbar in the root layout (e.g. /create).
     const supabase = createClient()
 
-    async function initializeAuth() {
-      // On hard refresh / direct page load, the browser Supabase client often doesn't
-      // immediately see the session from cookies set by the server proxy.
-      // We explicitly force a refreshSession() on every mount to hydrate the session.
-      // This is the most reliable way to keep the logged-in UI (avatar + profile buttons)
-      // from disappearing on F5 / Cmd+R.
-      const { data: { session } } = await supabase.auth.refreshSession()
-      const authUser = session?.user
+    let initialResolved = false
 
-      if (authUser) {
-        // Set fallback *immediately* so the UI never shows as logged out
-        const quickFallback: UserProfile = {
-          id: authUser.id,
-          username: (authUser.user_metadata?.username as string) ||
-                    (authUser.email ? authUser.email.split('@')[0] : 'user'),
-          full_name: (authUser.user_metadata?.full_name as string) || null,
-          avatar_url: (authUser.user_metadata?.avatar_url as string) || null,
+    // The listener is the source of truth for auth state.
+    // It reliably fires INITIAL_SESSION on mount with the persisted session
+    // (from cookies set by the server proxy + client storage).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: AuthChangeEvent, session: Session | null) => {
+        if (session?.user) {
+          const u = session.user
+          // Immediately set quick fallback so logged-in UI (avatar + profile buttons)
+          // appears without waiting for profile fetch.
+          const quickFallback: UserProfile = {
+            id: u.id,
+            username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
+            full_name: (u.user_metadata?.full_name as string) || null,
+            avatar_url: (u.user_metadata?.avatar_url as string) || null,
+          }
+          setUser(quickFallback)
+
+          // Fetch real profile data or ensure the row exists via backend.
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, username, full_name, avatar_url")
+            .eq("id", u.id)
+            .maybeSingle()
+
+          if (profile) {
+            setUser(profile)
+          } else {
+            api.post('/api/profiles/ensure', {}).catch(() => {})
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null)
         }
-        setUser(quickFallback)
 
-        // Upgrade to real profile if it exists, or ensure one in background
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .eq("id", authUser.id)
-          .maybeSingle()
-
-        if (profile) {
-          setUser(profile)
-        } else {
-          api.post('/api/profiles/ensure', {}).catch(() => {})
+        // Only resolve loading state on the *first* auth event we receive.
+        // Prevents the UI from flashing to logged-out state on hard reload.
+        if (!initialResolved && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT')) {
+          initialResolved = true
+          setIsLoading(false)
         }
-      } else {
-        setUser(null)
       }
+    )
 
-      setIsLoading(false)
-    }
-
-    initializeAuth()
-
-    // The listener will handle live changes (sign in/out from other tabs, etc.)
-    // and also fires INITIAL_SESSION on mount (though we already forced refresh above)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
-      if (session?.user) {
-        const u = session.user
-        const quickFallback: UserProfile = {
-          id: u.id,
-          username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
-          full_name: (u.user_metadata?.full_name as string) || null,
-          avatar_url: (u.user_metadata?.avatar_url as string) || null,
-        }
-        setUser(quickFallback)
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .eq("id", u.id)
-          .maybeSingle()
-
-        if (profile) {
-          setUser(profile)
-        } else {
-          api.post('/api/profiles/ensure', {}).catch(() => {})
-        }
-      } else {
-        setUser(null)
-      }
-    })
+    // Explicitly refresh the session on mount. This forces the browser client
+    // to pick up any cookies refreshed by the server-side proxy on hard reload.
+    // It will cause the listener to receive an updated event if needed.
+    supabase.auth.refreshSession().catch(() => {})
 
     return () => subscription.unsubscribe()
   }, []) // run once on mount (client only)
