@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Moon, Sun, User, LogOut, Plus, BarChart3, TrendingUp, Users } from "lucide-react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/components/theme-provider"
 import { toast } from "sonner"
 
 interface UserProfile {
@@ -37,15 +37,17 @@ export function Navbar() {
     // of pages that include the Navbar in the root layout (e.g. /create).
     const supabase = createClient()
 
-    async function getUser() {
-      // Use getSession for faster/more reliable client-side detection after login redirect.
-      // getUser() does extra validation which can sometimes lag right after signIn.
-      const { data: { session } } = await supabase.auth.getSession()
+    async function initializeAuth() {
+      // On hard refresh / direct page load, the browser Supabase client often doesn't
+      // immediately see the session from cookies set by the server proxy.
+      // We explicitly force a refreshSession() on every mount to hydrate the session.
+      // This is the most reliable way to keep the logged-in UI (avatar + profile buttons)
+      // from disappearing on F5 / Cmd+R.
+      const { data: { session } } = await supabase.auth.refreshSession()
       const authUser = session?.user
 
       if (authUser) {
-        // Immediately set a fallback so the logged-in UI (avatar, dropdown, "New Forecast" etc.)
-        // never disappears even if the profiles row isn't ready yet.
+        // Set fallback *immediately* so the UI never shows as logged out
         const quickFallback: UserProfile = {
           id: authUser.id,
           username: (authUser.user_metadata?.username as string) ||
@@ -55,7 +57,7 @@ export function Navbar() {
         }
         setUser(quickFallback)
 
-        // Now try to load the real profile data (for accurate name/avatar)
+        // Upgrade to real profile if it exists, or ensure one in background
         const { data: profile } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
@@ -65,19 +67,22 @@ export function Navbar() {
         if (profile) {
           setUser(profile)
         } else {
-          // Profile still missing — ensure it in the background (backend will create it)
           api.post('/api/profiles/ensure', {}).catch(() => {})
-          // Keep the quickFallback so the user menu stays visible
         }
+      } else {
+        setUser(null)
       }
+
       setIsLoading(false)
     }
-    getUser()
 
+    initializeAuth()
+
+    // The listener will handle live changes (sign in/out from other tabs, etc.)
+    // and also fires INITIAL_SESSION on mount (though we already forced refresh above)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
       if (session?.user) {
         const u = session.user
-        // Set quick fallback immediately so UI (avatar + profile buttons) stays visible
         const quickFallback: UserProfile = {
           id: u.id,
           username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
@@ -96,7 +101,6 @@ export function Navbar() {
           setUser(profile)
         } else {
           api.post('/api/profiles/ensure', {}).catch(() => {})
-          // keep quickFallback
         }
       } else {
         setUser(null)
