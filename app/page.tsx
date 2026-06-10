@@ -1,290 +1,178 @@
+"use client"
+
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ForecastCard } from "@/components/forecast-card"
-import { AnalystCard } from "@/components/analyst-card"
-import { getTrendingPolymarketMarkets } from "@/lib/polymarket"
-import { createClient } from "@/lib/supabase/server"
-import { ArrowRight, Target, Users, TrendingUp, Award, Shield, ExternalLink } from "lucide-react"
-import type { ForecastWithAnalyst, Profile } from "@/types"
+import { MarketCard } from "@/components/market-card"
+import { usePredictionStore } from "@/lib/prediction-store"
+import { getMockMarkets } from "@/lib/mock-markets"
+import type { Market } from "@/types"
+import { ArrowRight, Trophy, TrendingUp, Users, Zap } from "lucide-react"
 
-export const dynamic = 'force-dynamic'
+export default function LandingPage() {
+  const { markets: liveMarkets } = usePredictionStore()
+  const [featured, setFeatured] = useState<Market[]>([])
 
-export default async function LandingPage() {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 
-    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001')
-
-  let trendingForecasts: ForecastWithAnalyst[] = []
-  let topAnalysts: any[] = []
-
-  if (backendUrl) {
-    // Use the dedicated backend for data when configured
-    const [trendingRes, leaderboardRes] = await Promise.all([
-      fetch(`${backendUrl}/api/forecasts?status=open&limit=6`, { next: { revalidate: 60 } }),
-      fetch(`${backendUrl}/api/leaderboard?limit=4`, { next: { revalidate: 60 } }),
-    ])
-
-    const trendingData = await trendingRes.json()
-    const leaderboardData = await leaderboardRes.json()
-
-    trendingForecasts = (trendingData.data || []).map((f: any) => ({
-      ...f,
-      analyst_username: f.profiles?.username || "",
-      analyst_name: f.profiles?.full_name || null,
-      analyst_avatar: f.profiles?.avatar_url || null,
-    }))
-
-    topAnalysts = leaderboardData.data || []
-  } else {
-    // Fallback to direct Supabase when backend URL not configured (allows deploy without the env var)
-    const supabase = await createClient()
-
-    const { data: trendingRaw } = await supabase
-      .from("forecasts")
-      .select(`*, profiles:user_id (id, username, full_name, avatar_url)`)
-      .eq("status", "open")
-      .order("created_at", { ascending: false })
-      .limit(6)
-
-    trendingForecasts = (trendingRaw || []).map((f: any) => ({
-      ...f,
-      analyst_username: f.profiles?.username || "",
-      analyst_name: f.profiles?.full_name || null,
-      analyst_avatar: f.profiles?.avatar_url || null,
-    }))
-
-    const { data: leaderboardRaw } = await supabase
-      .from("profiles")
-      .select("id, username, full_name, avatar_url, accuracy, total_forecasts, correct_forecasts, follower_count, expertise_areas")
-      .gte("total_forecasts", 1)
-      .order("accuracy", { ascending: false })
-      .limit(4)
-
-    topAnalysts = leaderboardRaw || []
-  }
-
-  // Trending Polymarket events (reference only)
-  const polymarketEvents = await getTrendingPolymarketMarkets(6)
-
-  const features = [
-    {
-      icon: Target,
-      title: "Make Clear Forecasts",
-      desc: "Write specific, time-bound predictions with confidence levels. Track every claim you make.",
-    },
-    {
-      icon: Award,
-      title: "Build a Track Record",
-      desc: "Every forecast is timestamped. When resolved, your accuracy is permanently recorded on your profile.",
-    },
-    {
-      icon: Users,
-      title: "Follow Top Analysts",
-      desc: "Subscribe to forecasters whose domains you care about. See their latest predictions in your feed.",
-    },
-    {
-      icon: TrendingUp,
-      title: "Public Leaderboard",
-      desc: "Transparent accuracy rankings. No hidden scores. The best forecasters rise to the top.",
-    },
-    {
-      icon: Shield,
-      title: "No Markets. No Betting.",
-      desc: "This is purely an expert opinion and forecasting platform. Pure signal, zero noise from gambling mechanics.",
-    },
-  ]
+  useEffect(() => {
+    // Prefer live prices from the store, fall back to static mocks
+    const base = liveMarkets.length > 0 ? liveMarkets : getMockMarkets()
+    // Pick high-volume interesting markets for the homepage
+    const sorted = [...base].sort((a, b) => b.volume - a.volume)
+    setFeatured(sorted.slice(0, 6))
+  }, [liveMarkets])
 
   return (
     <div className="flex flex-col">
-      {/* Hero */}
+      {/* Hero — Prediction Market */}
       <section className="relative border-b bg-gradient-to-b from-background to-muted/30 pt-16 pb-20">
         <div className="container px-4 mx-auto max-w-5xl text-center">
           <Badge className="mb-4 bg-accent/10 text-accent border-accent/20" variant="outline">
-            Professional Forecasting Platform
+            FIFA World Cup 2026 • Live Trading
           </Badge>
+
           <h1 className="text-5xl md:text-6xl font-semibold tracking-tighter mb-6">
-            Make forecasts.<br />Build credibility.
+            Trade the World Cup.<br />Yes or No.
           </h1>
-          <p className="max-w-2xl mx-auto text-xl text-muted-foreground mb-10">
-            ForcastNetwork is the home for analysts and forecasters who want their predictions 
-            recorded, measured, and respected. No betting. No trading. Just expertise.
+          <p className="max-w-2xl mx-auto text-xl text-muted-foreground mb-8">
+            The premier prediction market for FIFA World Cup 2026. Buy and sell shares on every match, 
+            the champion, Golden Boot, and more. Powered by crypto wallets. Fake USDC to start.
           </p>
+
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button size="lg" asChild className="h-12 px-8 text-base">
-              <Link href="/signup">Start forecasting for free</Link>
+            <Button size="lg" asChild className="h-12 px-9 text-base">
+              <Link href="/markets">Start Trading Markets</Link>
             </Button>
-            <Button size="lg" variant="outline" asChild className="h-12 px-8 text-base">
-              <Link href="/forecasts">Browse forecasts</Link>
+            <Button size="lg" variant="outline" asChild className="h-12 px-9 text-base">
+              <Link href="/portfolio">View Portfolio</Link>
             </Button>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            Free forever for analysts. No credit card required.
+            Connect your wallet in the top right • 10,000 USDC demo balance included
           </p>
         </div>
       </section>
 
-      {/* Stats bar */}
+      {/* Quick stats */}
       <section className="border-b py-5 bg-muted/40">
         <div className="container max-w-6xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-y-6 text-center text-sm">
           <div>
-            <div className="font-semibold text-2xl tabular-nums tracking-tight">12k+</div>
-            <div className="text-muted-foreground">Forecasts made</div>
+            <div className="font-semibold text-2xl tabular-nums tracking-tight">12</div>
+            <div className="text-muted-foreground">Active markets</div>
           </div>
           <div>
-            <div className="font-semibold text-2xl tabular-nums tracking-tight">3.2k</div>
-            <div className="text-muted-foreground">Active forecasters</div>
+            <div className="font-semibold text-2xl tabular-nums tracking-tight">$4.2M</div>
+            <div className="text-muted-foreground">Total volume traded</div>
           </div>
           <div>
-            <div className="font-semibold text-2xl tabular-nums tracking-tight">71%</div>
-            <div className="text-muted-foreground">Avg. top-100 accuracy</div>
+            <div className="font-semibold text-2xl tabular-nums tracking-tight">3,841</div>
+            <div className="text-muted-foreground">Trades executed</div>
           </div>
           <div>
-            <div className="font-semibold text-2xl tabular-nums tracking-tight">98k</div>
-            <div className="text-muted-foreground">Comments &amp; discussions</div>
+            <div className="font-semibold text-2xl tabular-nums tracking-tight">2,109</div>
+            <div className="text-muted-foreground">Wallets connected</div>
           </div>
         </div>
       </section>
 
-      {/* Trending forecasts */}
-      {trendingForecasts.length > 0 && (
-        <section className="py-16 border-b">
-          <div className="container px-4 mx-auto max-w-7xl">
-            <div className="flex items-end justify-between mb-8">
-              <div>
-                <div className="uppercase tracking-[2px] text-xs text-accent font-medium mb-1">HOT RIGHT NOW</div>
-                <h2 className="text-3xl font-semibold tracking-tight">Trending Forecasts</h2>
-              </div>
-              <Button variant="ghost" asChild>
-                <Link href="/forecasts" className="gap-1">View all <ArrowRight className="h-4 w-4" /></Link>
-              </Button>
+      {/* Featured Markets */}
+      <section className="py-14 border-b">
+        <div className="container px-4 mx-auto max-w-7xl">
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <div className="uppercase tracking-[2px] text-xs text-accent font-medium mb-1">LIVE NOW</div>
+              <h2 className="text-3xl font-semibold tracking-tight">Featured World Cup Markets</h2>
             </div>
+            <Button variant="ghost" asChild>
+              <Link href="/markets" className="gap-1">See all markets <ArrowRight className="h-4 w-4" /></Link>
+            </Button>
+          </div>
+
+          {featured.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {trendingForecasts.map((f) => (
-                <ForecastCard key={f.id} forecast={f} />
+              {featured.map((m) => (
+                <MarketCard key={m.id} market={m} />
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          ) : (
+            <div className="text-muted-foreground">Loading markets…</div>
+          )}
+        </div>
+      </section>
 
-      {/* Trending Polymarket Events (reference / context only) */}
-      {polymarketEvents.length > 0 && (
-        <section className="py-16 border-b bg-muted/20">
-          <div className="container px-4 mx-auto max-w-7xl">
-            <div className="flex items-end justify-between mb-8">
-              <div>
-                <div className="uppercase tracking-[2px] text-xs text-amber-600 dark:text-amber-400 font-medium mb-1">REAL-WORLD EVENTS</div>
-                <h2 className="text-3xl font-semibold tracking-tight">Trending Polymarket Events</h2>
-                <p className="text-sm text-muted-foreground mt-1">Popular markets for reference. Create your own forecast anchored to these events.</p>
-              </div>
-              <Button variant="ghost" asChild>
-                <Link href="/create" className="gap-1">Create forecast on an event <ArrowRight className="h-4 w-4" /></Link>
-              </Button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {polymarketEvents.map((m) => (
-                <Card key={m.id} className="border-amber-500/20 hover:border-amber-500/40 transition">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <Badge variant="outline" className="mb-2 text-amber-600 border-amber-500/40">Polymarket</Badge>
-                        <h3 className="font-semibold leading-tight text-[15px] line-clamp-3">{m.question}</h3>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-2xl font-semibold tabular-nums tracking-tighter">{(m.lastTradePrice ?? 0).toFixed(2)}</div>
-                        <div className="text-[10px] text-muted-foreground -mt-1">price</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between text-xs">
-                      <div className="text-muted-foreground">
-                        {m.volume ? `$${(m.volume / 1_000_000).toFixed(1)}M vol` : "—"}
-                      </div>
-                      <Button size="sm" variant="outline" asChild className="h-7 text-xs">
-                        <Link href={`/create?link=polymarket:${m.slug}`}>
-                          Forecast on this <ExternalLink className="ml-1 h-3 w-3" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="mt-3 text-[11px] text-muted-foreground">
-              Prices shown are from Polymarket (public data). Linking a forecast to an event is for transparency and does not involve trading or betting.
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Features */}
-      <section className="py-20 bg-muted/30 border-b">
+      {/* How it works */}
+      <section className="py-16 bg-muted/30 border-b">
         <div className="container px-4 mx-auto max-w-6xl">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-semibold tracking-tight mb-3">Built for serious forecasters</h2>
-            <p className="text-muted-foreground max-w-md mx-auto">Everything you need to publish predictions, demonstrate skill, and be discovered.</p>
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-semibold tracking-tight mb-2">How ForcastNetwork works</h2>
+            <p className="text-muted-foreground">Polymarket-style share trading, built for the beautiful game.</p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((feature, idx) => (
-              <Card key={idx} className="border-0 shadow-none bg-background">
-                <CardContent className="pt-6">
-                  <div className="h-11 w-11 rounded-xl bg-accent/10 flex items-center justify-center mb-5">
-                    <feature.icon className="h-5 w-5 text-accent" />
-                  </div>
-                  <h3 className="font-semibold mb-2 text-lg">{feature.title}</h3>
-                  <p className="text-muted-foreground leading-relaxed text-[15px]">{feature.desc}</p>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid md:grid-cols-3 gap-6">
+            <Card className="border-0 bg-background">
+              <CardContent className="pt-6">
+                <div className="h-11 w-11 rounded-xl bg-accent/10 flex items-center justify-center mb-5">
+                  <Trophy className="h-5 w-5 text-accent" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">1. Connect Wallet</h3>
+                <p className="text-muted-foreground text-[15px]">
+                  Use MetaMask or WalletConnect. Your wallet address is your identity. No email required for trading.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-0 bg-background">
+              <CardContent className="pt-6">
+                <div className="h-11 w-11 rounded-xl bg-accent/10 flex items-center justify-center mb-5">
+                  <TrendingUp className="h-5 w-5 text-accent" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">2. Buy Yes or No Shares</h3>
+                <p className="text-muted-foreground text-[15px]">
+                  Every market has a Yes and a No price (adds up to ~99¢). Prices move with real buying and selling pressure.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-0 bg-background">
+              <CardContent className="pt-6">
+                <div className="h-11 w-11 rounded-xl bg-accent/10 flex items-center justify-center mb-5">
+                  <Zap className="h-5 w-5 text-accent" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">3. Trade &amp; Profit</h3>
+                <p className="text-muted-foreground text-[15px]">
+                  Sell anytime before resolution. When the event ends, winning shares pay out $1 each. Track everything in your Portfolio.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="text-center mt-8">
+            <Button size="lg" asChild>
+              <Link href="/markets">Browse all 2026 World Cup markets</Link>
+            </Button>
           </div>
         </div>
       </section>
 
-      {/* Top Analysts */}
-      {topAnalysts && topAnalysts.length > 0 && (
-        <section className="py-16">
-          <div className="container px-4 mx-auto max-w-7xl">
-            <div className="flex items-end justify-between mb-8">
-              <div>
-                <div className="uppercase tracking-[2px] text-xs text-accent font-medium mb-1">RECOGNIZED EXPERTS</div>
-                <h2 className="text-3xl font-semibold tracking-tight">Top Analysts</h2>
-              </div>
-              <Button variant="ghost" asChild>
-                <Link href="/leaderboard">Full leaderboard <ArrowRight className="h-4 w-4 ml-1" /></Link>
-              </Button>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {topAnalysts.map((analyst: any) => (
-                <AnalystCard key={analyst.id} analyst={analyst} />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* CTA */}
-      <section className="py-20 border-t bg-accent text-white">
-        <div className="container px-4 text-center max-w-2xl mx-auto">
-          <h2 className="text-4xl font-semibold tracking-tighter mb-4">Start building your forecasting reputation today.</h2>
-          <p className="text-accent-foreground/80 mb-8 text-lg">Join hundreds of analysts publishing credible, time-stamped predictions.</p>
-          <Button size="lg" variant="secondary" asChild className="h-12 px-10 text-base text-accent">
-            <Link href="/signup">Create free account</Link>
+      {/* Footer CTA */}
+      <section className="py-16 border-t">
+        <div className="container max-w-2xl mx-auto px-4 text-center">
+          <h2 className="text-3xl font-semibold tracking-tighter mb-3">Ready to trade the beautiful game?</h2>
+          <p className="text-muted-foreground mb-6">Connect your wallet and start with 10,000 fake USDC. Real on-chain markets on Base &amp; Polygon coming soon.</p>
+          <Button size="lg" asChild className="px-10">
+            <Link href="/markets">Open Markets</Link>
           </Button>
-          <p className="text-xs text-accent-foreground/60 mt-6">No credit card. No ads. No prediction markets.</p>
         </div>
       </section>
 
-      <footer className="border-t py-10 text-sm text-muted-foreground">
+      <footer className="border-t py-8 text-sm text-muted-foreground">
         <div className="container max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div>© {new Date().getFullYear()} ForcastNetwork. A platform for evidence-based forecasting.</div>
+          <div>© {new Date().getFullYear()} ForcastNetwork — FIFA World Cup 2026 Prediction Markets (demo)</div>
           <div className="flex gap-5">
-            <Link href="/forecasts">Explore</Link>
+            <Link href="/markets">Markets</Link>
+            <Link href="/portfolio">Portfolio</Link>
             <Link href="/leaderboard">Leaderboard</Link>
-            <Link href="/signup">Join</Link>
           </div>
         </div>
       </footer>

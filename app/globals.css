@@ -135,3 +135,83 @@ body {
 .stat-number {
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================
+   ForcastNetwork — FIFA WC 2026 Prediction Market
+   Premium dark sports theme additions
+   ============================================ */
+
+/* Market cards with sports feel */
+.market-card {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.2s ease;
+  border: 1px solid hsl(var(--border));
+}
+
+.market-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 
+              0 8px 10px -6px rgb(0 0 0 / 0.1);
+  border-color: hsl(var(--accent) / 0.5);
+}
+
+.dark .market-card:hover {
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3), 
+              0 8px 10px -6px rgb(0 0 0 / 0.3);
+}
+
+/* Yes / No action buttons (Polymarket style) */
+.yes-btn {
+  background-color: #052e16;
+  color: #4ade80;
+  border: 1px solid #166534;
+  font-weight: 600;
+  transition: all 0.1s ease;
+}
+
+.yes-btn:hover {
+  background-color: #14532d;
+  border-color: #4ade80;
+  color: #86efac;
+}
+
+.no-btn {
+  background-color: #450a0a;
+  color: #f87171;
+  border: 1px solid #7f1d1d;
+  font-weight: 600;
+  transition: all 0.1s ease;
+}
+
+.no-btn:hover {
+  background-color: #7f1d1d;
+  border-color: #f87171;
+  color: #fda4af;
+}
+
+/* Subtle pitch / sports accent */
+.pitch-accent {
+  position: relative;
+}
+
+.pitch-accent::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(74, 222, 128, 0.03) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Wallet address / balance pills */
+.wallet-pill {
+  font-family: var(--font-geist-mono);
+  font-feature-settings: "tnum";
+  letter-spacing: -0.3px;
+}

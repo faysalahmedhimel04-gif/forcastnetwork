@@ -110,3 +110,60 @@ export type PolymarketMarket = {
   closed: boolean
   url: string
 }
+
+// ============================================
+// FIFA World Cup 2026 Prediction Market Types
+// ============================================
+
+export type MarketCategory =
+  | 'Winner'
+  | 'Match Winner'
+  | 'Golden Boot'
+  | 'To Reach Final'
+  | 'Group Stage'
+  | 'Top Scorer'
+  | 'Other'
+
+export type Market = {
+  id: string
+  title: string
+  description: string
+  category: MarketCategory
+  yesPrice: number // e.g. 0.68 = 68¢ for Yes
+  noPrice: number
+  volume: number // total traded volume (fake USDC)
+  endDate: string // ISO date string
+  resolved: boolean
+  resolvedOutcome?: 'yes' | 'no' | null
+}
+
+export type Position = {
+  marketId: string
+  side: 'yes' | 'no'
+  shares: number
+  avgPrice: number // weighted average entry price
+}
+
+export type Trade = {
+  id: string
+  marketId: string
+  marketTitle: string
+  side: 'yes' | 'no'
+  shares: number
+  price: number
+  cost: number // signed: positive = spent USDC on buy, negative = received on sell
+  type: 'buy' | 'sell'
+  timestamp: string
+}
+
+export type UserPortfolio = {
+  balance: number // fake USDC
+  positions: Position[]
+  trades: Trade[]
+}
+
+// Helper to format prices nicely
+export const formatPrice = (price: number) => (price * 100).toFixed(1) + '¢'
+export const formatShares = (shares: number) => shares.toLocaleString()
+export const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)

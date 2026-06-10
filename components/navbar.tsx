@@ -15,9 +15,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Moon, Sun, User, LogOut, Plus, BarChart3, TrendingUp, Users } from "lucide-react"
+import { Moon, Sun, User, LogOut, Plus, BarChart3, TrendingUp, Users, Trophy, Wallet } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { toast } from "sonner"
+import { ConnectKitButton } from "connectkit"
+import { usePredictionStore } from "@/lib/prediction-store"
+import { useAccount } from "wagmi"
+import { formatCurrency } from "@/types"
 
 interface UserProfile {
   id: string
@@ -31,23 +35,73 @@ export function Navbar() {
   const [isLoading, setIsLoading] = useState(true)
   const { theme, setTheme } = useTheme()
 
+  // Prediction market fake balance (persisted in Zustand + localStorage)
+  const balance = usePredictionStore((s) => s.balance)
+  const { isConnected } = useAccount()
+
   useEffect(() => {
     // Create Supabase client only inside effect (client-side only execution).
     // This avoids any Supabase instantiation during server prerender / static generation
     // of pages that include the Navbar in the root layout (e.g. /create).
     const supabase = createClient()
 
-    let initialResolved = false
+    // On hard reload from the address bar, the React state is lost.
+    // We must re-read the session from cookies/storage immediately on mount.
+    // This is the most reliable way to restore logged-in UI (avatar + profile buttons)
+    // after a full page reload.
+    async function restoreSession() {
+      // First try getSession (reads from storage/cookies)
+      let { data: { session } } = await supabase.auth.getSession()
 
-    // The listener is the source of truth for auth state.
-    // It reliably fires INITIAL_SESSION on mount with the persisted session
-    // (from cookies set by the server proxy + client storage).
+      // If still no session (common on hard reload with custom proxy),
+      // force a refresh from the cookies the server set.
+      if (!session?.user) {
+        const { data: { session: refreshed } } = await supabase.auth.refreshSession()
+        session = refreshed
+      }
+
+      if (session?.user) {
+        const u = session.user
+        // Set fallback immediately so UI appears without waiting for profile DB call.
+        const quickFallback: UserProfile = {
+          id: u.id,
+          username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
+          full_name: (u.user_metadata?.full_name as string) || null,
+          avatar_url: (u.user_metadata?.avatar_url as string) || null,
+        }
+        setUser(quickFallback)
+
+        // Then try to get the real profile row, or ensure it exists (via backend).
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, username, full_name, avatar_url")
+          .eq("id", u.id)
+          .maybeSingle()
+
+        if (profile) {
+          setUser(profile)
+        } else {
+          api.post('/api/profiles/ensure', {}).catch(() => {})
+        }
+      } else {
+        setUser(null)
+      }
+
+      setIsLoading(false)
+    }
+
+    restoreSession()
+
+    // Listener still needed for live changes (sign out in another tab, etc.)
+    // and will also fire INITIAL_SESSION (we can ignore it here since we already restored above).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
-        if (session?.user) {
+        if (event === 'SIGNED_OUT') {
+          setUser(null)
+        } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          // Only react to real sign-in or refresh events here (not INITIAL_SESSION,
+          // because we already handled initial restore above).
           const u = session.user
-          // Immediately set quick fallback so logged-in UI (avatar + profile buttons)
-          // appears without waiting for profile fetch.
           const quickFallback: UserProfile = {
             id: u.id,
             username: (u.user_metadata?.username as string) || (u.email ? u.email.split('@')[0] : 'user'),
@@ -56,7 +110,6 @@ export function Navbar() {
           }
           setUser(quickFallback)
 
-          // Fetch real profile data or ensure the row exists via backend.
           const { data: profile } = await supabase
             .from("profiles")
             .select("id, username, full_name, avatar_url")
@@ -68,23 +121,9 @@ export function Navbar() {
           } else {
             api.post('/api/profiles/ensure', {}).catch(() => {})
           }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
-        }
-
-        // Only resolve loading state on the *first* auth event we receive.
-        // Prevents the UI from flashing to logged-out state on hard reload.
-        if (!initialResolved && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT')) {
-          initialResolved = true
-          setIsLoading(false)
         }
       }
     )
-
-    // Explicitly refresh the session on mount. This forces the browser client
-    // to pick up any cookies refreshed by the server-side proxy on hard reload.
-    // It will cause the listener to receive an updated event if needed.
-    supabase.auth.refreshSession().catch(() => {})
 
     return () => subscription.unsubscribe()
   }, []) // run once on mount (client only)
@@ -108,25 +147,26 @@ export function Navbar() {
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2 font-semibold text-xl tracking-tight">
             <div className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center">
-              <BarChart3 className="h-4.5 w-4.5 text-white" />
+              <Trophy className="h-4.5 w-4.5 text-white" />
             </div>
             <span>ForcastNetwork</span>
+            <span className="ml-1.5 text-[10px] font-mono tracking-[2px] text-accent/70 hidden lg:inline">WC 2026</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-6 text-sm">
-            <Link href="/forecasts" className="nav-link text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4" /> Forecasts
+            <Link href="/markets" className="nav-link text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+              <TrendingUp className="h-4 w-4" /> Markets
+            </Link>
+            <Link href="/portfolio" className="nav-link text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+              <Wallet className="h-4 w-4" /> Portfolio
             </Link>
             <Link href="/leaderboard" className="nav-link text-muted-foreground hover:text-foreground flex items-center gap-1.5">
               <BarChart3 className="h-4 w-4" /> Leaderboard
             </Link>
-            <Link href="/analysts" className="nav-link text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <Users className="h-4 w-4" /> Analysts
-            </Link>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Theme toggle */}
           <Button
             variant="ghost"
@@ -139,11 +179,52 @@ export function Navbar() {
             <span className="sr-only">Toggle theme</span>
           </Button>
 
+          {/* Fake USDC Balance (from Zustand prediction market store) */}
+          <div className="hidden md:flex items-center gap-1.5 rounded-full border bg-card px-3 py-1 text-sm font-medium wallet-pill">
+            <span className="text-muted-foreground">USDC</span>
+            <span className="tabular-nums text-emerald-400">
+              {formatCurrency(balance)}
+            </span>
+          </div>
+
+          {/* Admin Link (visible when wallet connected) */}
+          {isConnected && (
+            <Button asChild size="sm" variant="ghost" className="hidden md:flex gap-1.5 text-xs">
+              <Link href="/admin">
+                Admin
+              </Link>
+            </Button>
+          )}
+
+          {/* Quick Create (visible when wallet connected) */}
+          {isConnected && (
+            <Button asChild size="sm" variant="outline" className="hidden sm:flex gap-1.5">
+              <Link href="/admin/create-market">
+                <Plus className="h-4 w-4" /> New Market
+              </Link>
+            </Button>
+          )}
+
+          {/* === WEB3: ConnectKit Wallet Button (primary auth for prediction markets) === */}
+          <div className="hidden sm:block">
+            <ConnectKitButton 
+              showBalance={false}
+              showAvatar={true}
+            />
+          </div>
+          {/* Mobile compact wallet button */}
+          <div className="sm:hidden">
+            <ConnectKitButton 
+              showBalance={false}
+              showAvatar={true}
+            />
+          </div>
+
           {!isLoading && (
             <>
               {user ? (
                 <>
-                  <Button asChild size="sm" className="hidden sm:inline-flex">
+                  <Button asChild size="sm" className="hidden sm:inline-flex" variant="outline">
                     <Link href="/create">
                       <Plus className="h-4 w-4 mr-1.5" /> New Forecast
                     </Link>
@@ -190,7 +271,7 @@ export function Navbar() {
                   </DropdownMenu>
                 </>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2">
                   <Button variant="ghost" size="sm" asChild>
                     <Link href="/login">Log in</Link>
                   </Button>
@@ -206,9 +287,9 @@ export function Navbar() {
 
       {/* Mobile nav */}
       <div className="md:hidden border-t px-4 py-2 flex gap-4 text-sm overflow-x-auto">
-        <Link href="/forecasts" className="text-muted-foreground hover:text-foreground whitespace-nowrap">Forecasts</Link>
+        <Link href="/markets" className="text-muted-foreground hover:text-foreground whitespace-nowrap">Markets</Link>
+        <Link href="/portfolio" className="text-muted-foreground hover:text-foreground whitespace-nowrap">Portfolio</Link>
         <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground whitespace-nowrap">Leaderboard</Link>
-        <Link href="/analysts" className="text-muted-foreground hover:text-foreground whitespace-nowrap">Analysts</Link>
       </div>
     </nav>
   )

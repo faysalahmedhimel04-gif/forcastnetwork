@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { Navbar } from "@/components/navbar";
+import { Web3Providers } from "@/components/providers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,23 +20,23 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ForcastNetwork | Forecast Creator Network",
+    default: "ForcastNetwork | FIFA World Cup 2026 Prediction Markets",
     template: "%s | ForcastNetwork",
   },
-  description: "The professional network for forecasters and analysts. Create, share, and track the accuracy of your predictions. No betting. No markets. Just expert forecasting.",
+  description: "Trade Yes/No shares on FIFA World Cup 2026 matches, tournament winner, Golden Boot, and more. Polymarket-style prediction markets powered by crypto wallets. Fake USDC to start — real on-chain coming soon on Base & Polygon.",
   icons: {
     icon: "/favicon.ico",
   },
   openGraph: {
-    title: "ForcastNetwork | Forecast Creator Network",
-    description: "Publish time-bound predictions, build a public accuracy track record, and follow top analysts. Pure forecasting — no betting or trading.",
+    title: "ForcastNetwork | FIFA World Cup 2026 Prediction Markets",
+    description: "The premier prediction market for the 2026 FIFA World Cup. Buy and sell event shares with crypto. Live odds, portfolio tracking, and on-chain settlement coming soon.",
     // Add a public/og-image.png (1200x630 recommended) for social sharing
     // images: [{ url: "/og-image.png" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ForcastNetwork",
-    description: "Expert forecasting platform. Track accuracy. No markets, no betting.",
+    title: "ForcastNetwork — WC2026 Prediction Markets",
+    description: "Yes/No share trading for every World Cup match and market. Connect wallet to trade.",
   },
   metadataBase: new URL("https://forcastnetwork.com"),
 };
@@ -50,13 +51,15 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Toaster position="top-center" richColors closeButton />
+          <Web3Providers>
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Toaster position="top-center" richColors closeButton />
+          </Web3Providers>
         </ThemeProvider>
       </body>
     </html>
